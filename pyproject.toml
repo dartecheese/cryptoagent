@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cryptoagent"
+version = "0.1.0"
+description = "Multi-Agent LLM Crypto Trading Framework — TradingAgents adapted for DeFi"
+requires-python = ">=3.12"
+dependencies = [
+    "langgraph>=0.4",
+    "langchain-core>=0.3",
+    "langchain-openai>=0.3",
+    "langchain-anthropic>=0.3",
+    "pydantic>=2",
+    "httpx>=0.28",
+    "python-dotenv>=1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.25",
+]
+
+[project.scripts]
+cryptoagent = "scripts.run_analysis:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cryptoagent*"]
