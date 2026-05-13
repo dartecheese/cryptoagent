@@ -32,22 +32,15 @@ def create_narrative_analyst(llm):
         ]
 
         system_message = (
-            "You are a crypto Narrative Analyst. Your job is to identify which "
-            "market narratives are driving attention and capital flows, and assess "
-            "how well a given token aligns with those narratives.\n\n"
-            "Analyze these dimensions:\n"
-            "1. **Active Narratives**: What categories are trending right now? "
-            "(memecoins, AI agents, RWA, DePIN, L2s, gaming, etc.)\n"
-            "2. **Narrative Momentum**: Is this narrative early (growing), at peak "
-            "(saturated), or exhausted (capital rotating out)?\n"
-            "3. **Token Alignment**: How well does this specific token fit the active "
-            "narratives? Is it a leader or a follower?\n"
-            "4. **Rotation Signals**: Are you seeing capital rotate FROM one narrative "
-            "TO another? This is critical for timing.\n"
-            "5. **Boost Activity**: Are tokens in this category being boosted on "
-            "DexScreener? Boosts = paid promotion = narrative signal.\n\n"
-            "Provide a clear NARRATIVE RATING: 🟢 Strong Alignment / 🟡 Neutral / "
-            "🔴 Misaligned. End with a Markdown table."
+            "You are a crypto Narrative Analyst. Identify market meta concisely.\n\n"
+            "REQUIRED OUTPUT FORMAT (terse):\n"
+            "1. Active Narratives: [list top 3 trending categories]\n"
+            "2. Token Alignment: [STRONG|WEAK|MISALIGNED] — why\n"
+            "3. Narrative Phase: [EARLY|GROWING|PEAK|EXHAUSTED]\n"
+            "4. Rotation Signal: [yes/no] — capital flowing in or out?\n\n"
+            "END WITH EXACTLY:\n"
+            "NARRATIVE: [STRONG_ALIGNMENT|NEUTRAL|MISALIGNED]\n"
+            "MOMENTUM: [BUILDING|STEADY|FADING]"
             + get_language_instruction()
         )
 

@@ -21,7 +21,7 @@ Usage:
 import os
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
 
@@ -147,6 +147,7 @@ class CryptoAgentGraph:
 
         # State
         self.curr_state = None
+        self._last_compact = None
         self.token_of_interest = None
         self.chain = None
 
@@ -198,9 +199,26 @@ class CryptoAgentGraph:
         # Extract the final decision from the state dict
         if final_state:
             decision = final_state.get("final_trade_decision", "")
+            self._last_compact = None  # Reset cache
             return final_state, decision
 
         return {}, "No decision produced."
+
+    def get_compact_decision(self) -> Optional["CompactDecision"]:
+        """Build a CompactDecision from the current analysis state.
+
+        Returns a machine-actionable ~500 byte decision suitable for
+        automated agentic trading. Returns None if no analysis has been run.
+        """
+        if self._last_compact is not None:
+            return self._last_compact
+
+        if not self.curr_state:
+            return None
+
+        from cryptoagent.agents.compact_decision import build_compact_decision
+        self._last_compact = build_compact_decision(self.curr_state)
+        return self._last_compact
 
     def get_report(self) -> str:
         """Build a comprehensive markdown report from the current state."""

@@ -29,22 +29,16 @@ def create_technical_analyst(llm):
         ]
 
         system_message = (
-            "You are a crypto Technical Analyst. Your job is to analyze price "
-            "action and identify trade setups using technical analysis.\n\n"
-            "Analyze these dimensions:\n"
-            "1. **Trend Analysis**: What is the overall trend? Use multiple timeframes "
-            "(1h, 4h, 1d). Is the trend strong or weakening?\n"
-            "2. **Support/Resistance**: Identify key levels. Where is price relative "
-            "to recent highs/lows?\n"
-            "3. **Momentum**: Look at price changes across timeframes (1h, 6h, 24h). "
-            "Is momentum accelerating or decelerating?\n"
-            "4. **Volume Analysis**: Is volume confirming the price move? Rising volume "
-            "on up moves = bullish. Falling volume on up moves = warning.\n"
-            "5. **Liquidity Depth**: Check DEX liquidity. Thin liquidity = high impact "
-            "cost and slippage risk.\n"
-            "6. **Buy/Sell Pressure**: Compare buy vs sell transaction counts and volumes.\n\n"
-            "Provide a clear TECHNICAL RATING: 🟢 Bullish Setup / 🟡 Neutral / 🔴 Bearish Setup. "
-            "Include specific entry/exit levels if you see them. End with a Markdown table."
+            "You are a crypto Technical Analyst. Analyze price action concisely.\n\n"
+            "REQUIRED OUTPUT FORMAT (terse):\n"
+            "1. Trend (1h/6h/24h): [UP/DOWN/FLAT] with % change\n"
+            "2. Volume: [USD 24h] — [rising/falling/steady]\n"
+            "3. Key Level: nearest support/resistance\n"
+            "4. Pattern: [accumulation/distribution/breakout/breakdown/none]\n"
+            "5. Liquidity Depth: [USD] — slippage risk?\n\n"
+            "END WITH EXACTLY:\n"
+            "SETUP: [BULLISH|NEUTRAL|BEARISH]\n"
+            "CONFIDENCE: [HIGH|MEDIUM|LOW]"
             + get_language_instruction()
         )
 
