@@ -28,7 +28,8 @@ cli = [
 ]
 
 [project.scripts]
-cryptoagent = "scripts.run_analysis:main"
+cryptoagent = "cli.main:main"
+cryptoagent-quick = "scripts.run_analysis:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
