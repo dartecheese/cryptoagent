@@ -271,12 +271,17 @@ def _parse_onchain_score(report: str) -> SignalScore:
                 s -= 0.1
                 flags.append("low_holders")
 
-    # Score from liquidity
+    # Score from liquidity — find the largest USD amount near 'liquidity'
     if "liquidity" in report_lower:
         import re
-        m = re.search(r'\$?([\d,.]+)\s*(?:usd|USD)?\s*(?:in\s*)?liquidity', report_lower)
-        if m:
-            liq = float(m.group(1).replace(",", ""))
+        # Find all dollar amounts near 'liquidity'
+        amounts = re.findall(r'\$?([\d,]+(?:\.[\d]+)?)\s*(?:usd|USD)?\s*(?:in\s*)?(?:total\s*)?liquidity', report_lower)
+        if not amounts:
+            # Fallback: any $ amount in the report with 'k' or 'm' suffix near liquidity
+            amounts = re.findall(r'liquidity[^$]*\$?([\d,]+(?:\.[\d]+)?)', report_lower)
+        if amounts:
+            # Take the largest amount found
+            liq = max(float(a.replace(",", "")) for a in amounts)
             if liq > 1_000_000:
                 s += 0.1
             elif liq > 100_000:
@@ -538,9 +543,22 @@ def _extract_thesis(final_decision: str, investment_plan: str) -> str:
 
 
 def _extract_first_sentence(text: str) -> str:
-    """Extract first meaningful sentence from a report."""
+    """Extract first meaningful sentence, skipping preamble."""
+    skip_prefixes = [
+        "here's", "let me", "i have", "i now", "i'll", "now ",
+        "excellent", "great", "alright", "okay", "based on",
+    ]
     for line in text.split("\n"):
         line = line.strip()
-        if len(line) > 20 and not line.startswith("#") and not line.startswith("*"):
-            return line[:200]
+        if len(line) < 20:
+            continue
+        if line.startswith("#"):
+            continue
+        # Skip preamble lines
+        lower = line.lower()
+        if any(lower.startswith(p) for p in skip_prefixes):
+            continue
+        if "FINAL TRANSACTION" in line:
+            continue
+        return line[:200]
     return text[:200]
