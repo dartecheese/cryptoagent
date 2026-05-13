@@ -228,13 +228,29 @@ def build_compact_decision(state: dict) -> CompactDecision:
 
 
 def _parse_onchain_score(report: str) -> SignalScore:
+    if not report:
+        return SignalScore(score=0.5, confidence=0)
+
+    # Try JSON first (new structured output)
+    import json, re
+    try:
+        # Find JSON block
+        m = re.search(r'\{[^}]+\}', report)
+        if m:
+            data = json.loads(m.group(0))
+            return SignalScore(
+                score=float(data.get("score", 0.5)),
+                confidence=float(data.get("confidence", 0.3)),
+                flags=data.get("flags", []),
+                summary=data.get("summary", report[:200]),
+            )
+    except (json.JSONDecodeError, ValueError, KeyError):
+        pass
+
+    # Fallback: text parsing
     s = 0.5
     c = 0.0
     flags = []
-
-    if not report:
-        return SignalScore(score=s, confidence=c)
-
     report_lower = report.lower()
 
     # Score from security findings
@@ -259,7 +275,6 @@ def _parse_onchain_score(report: str) -> SignalScore:
 
     # Score from holder distribution
     if "holders" in report_lower:
-        import re
         m = re.search(r'(\d[\d,]*)\s*holders', report_lower)
         if m:
             holders = int(m.group(1).replace(",", ""))
@@ -271,16 +286,12 @@ def _parse_onchain_score(report: str) -> SignalScore:
                 s -= 0.1
                 flags.append("low_holders")
 
-    # Score from liquidity — find the largest USD amount near 'liquidity'
+    # Score from liquidity
     if "liquidity" in report_lower:
-        import re
-        # Find all dollar amounts near 'liquidity'
         amounts = re.findall(r'\$?([\d,]+(?:\.[\d]+)?)\s*(?:usd|USD)?\s*(?:in\s*)?(?:total\s*)?liquidity', report_lower)
         if not amounts:
-            # Fallback: any $ amount in the report with 'k' or 'm' suffix near liquidity
             amounts = re.findall(r'liquidity[^$]*\$?([\d,]+(?:\.[\d]+)?)', report_lower)
         if amounts:
-            # Take the largest amount found
             liq = max(float(a.replace(",", "")) for a in amounts)
             if liq > 1_000_000:
                 s += 0.1
@@ -306,7 +317,6 @@ def _parse_onchain_score(report: str) -> SignalScore:
             s -= 0.05
             flags.append("new_token")
 
-    # Determine confidence based on data quality
     c = 0.7 if "verified" in report_lower or "holders" in report_lower else 0.3
 
     return SignalScore(
@@ -318,114 +328,82 @@ def _parse_onchain_score(report: str) -> SignalScore:
 
 
 def _parse_sentiment_score(report: str) -> SignalScore:
-    s = 0.5
-    c = 0.0
-    flags = []
-
     if not report:
-        return SignalScore(score=s, confidence=c)
+        return SignalScore(score=0.5, confidence=0)
 
+    # Try JSON first
+    import json, re
+    try:
+        m = re.search(r'\{[^}]+\}', report)
+        if m:
+            data = json.loads(m.group(0))
+            return SignalScore(
+                score=float(data.get("score", 0.5)),
+                confidence=float(data.get("confidence", 0.3)),
+                flags=data.get("flags", []),
+                summary=data.get("summary", report[:200]),
+            )
+    except (json.JSONDecodeError, ValueError, KeyError):
+        pass
+
+    # Fallback text parsing
+    s = 0.5
+    flags = []
     report_lower = report.lower()
-
-    # Extract buy/sell ratio
-    import re
     m = re.search(r'buy.*?sell.*?ratio.*?(\d+\.?\d*)', report_lower)
     if not m:
         m = re.search(r'ratio.*?(\d+\.?\d*)', report_lower)
-
     if m:
         ratio = float(m.group(1))
-        if ratio > 1.5:
-            s += 0.2
-        elif ratio > 1.0:
-            s += 0.1
-        elif ratio > 0.8:
-            s -= 0.05
-        else:
-            s -= 0.15
-            flags.append("sell_pressure")
-
-    if "bearish" in report_lower:
-        s -= 0.1
-    elif "bullish" in report_lower:
-        s += 0.1
-
-    c = 0.5
-
-    return SignalScore(
-        score=max(0, min(1, s)),
-        confidence=c,
-        flags=flags,
-        summary=_extract_first_sentence(report)[:200],
-    )
+        if ratio > 1.5: s += 0.2
+        elif ratio > 1.0: s += 0.1
+        elif ratio > 0.8: s -= 0.05
+        else: s -= 0.15; flags.append("sell_pressure")
+    if "bearish" in report_lower: s -= 0.1
+    elif "bullish" in report_lower: s += 0.1
+    return SignalScore(score=max(0, min(1, s)), confidence=0.5, flags=flags, summary=_extract_first_sentence(report)[:200])
 
 
 def _parse_narrative_score(report: str) -> SignalScore:
-    s = 0.5
-    c = 0.0
-    flags = []
-
     if not report:
-        return SignalScore(score=s, confidence=c)
-
-    report_lower = report.lower()
-
-    if "strong alignment" in report_lower:
-        s += 0.2
-    elif "alignment" in report_lower and "weak" not in report_lower:
-        s += 0.1
-    elif "misaligned" in report_lower:
-        s -= 0.15
-        flags.append("narrative_misaligned")
-
-    if "growing" in report_lower or "momentum" in report_lower:
-        s += 0.05
-    elif "exhausted" in report_lower or "post-peak" in report_lower:
-        s -= 0.1
-        flags.append("narrative_exhausted")
-
-    c = 0.4
-
-    return SignalScore(
-        score=max(0, min(1, s)),
-        confidence=c,
-        flags=flags,
-        summary=_extract_first_sentence(report)[:200],
-    )
+        return SignalScore(score=0.5, confidence=0)
+    import json, re
+    try:
+        m = re.search(r'\{[^}]+\}', report)
+        if m:
+            data = json.loads(m.group(0))
+            return SignalScore(score=float(data.get("score", 0.5)), confidence=float(data.get("confidence", 0.3)), flags=data.get("flags", []), summary=data.get("summary", report[:200]))
+    except (json.JSONDecodeError, ValueError, KeyError):
+        pass
+    s, flags = 0.5, []
+    rl = report.lower()
+    if "strong alignment" in rl: s += 0.2
+    elif "alignment" in rl and "weak" not in rl: s += 0.1
+    elif "misaligned" in rl: s -= 0.15; flags.append("narrative_misaligned")
+    if "growing" in rl or "momentum" in rl: s += 0.05
+    elif "exhausted" in rl or "post-peak" in rl: s -= 0.1; flags.append("narrative_exhausted")
+    return SignalScore(score=max(0, min(1, s)), confidence=0.4, flags=flags, summary=_extract_first_sentence(report)[:200])
 
 
 def _parse_technical_score(report: str) -> SignalScore:
-    s = 0.5
-    c = 0.0
-    flags = []
-
     if not report:
-        return SignalScore(score=s, confidence=c)
-
-    report_lower = report.lower()
-
-    if "bullish" in report_lower:
-        s += 0.1
-    elif "bearish" in report_lower:
-        s -= 0.1
-        flags.append("bearish_setup")
-
-    if "downtrend" in report_lower:
-        s -= 0.1
-    elif "uptrend" in report_lower:
-        s += 0.1
-
-    if "overbought" in report_lower:
-        s -= 0.05
-
-    c = 0.4
-
-    return SignalScore(
-        score=max(0, min(1, s)),
-        confidence=c,
-        flags=flags,
-        summary=_extract_first_sentence(report)[:200],
-    )
+        return SignalScore(score=0.5, confidence=0)
+    import json, re
+    try:
+        m = re.search(r'\{[^}]+\}', report)
+        if m:
+            data = json.loads(m.group(0))
+            return SignalScore(score=float(data.get("score", 0.5)), confidence=float(data.get("confidence", 0.3)), flags=data.get("flags", []), summary=data.get("summary", report[:200]))
+    except (json.JSONDecodeError, ValueError, KeyError):
+        pass
+    s, flags = 0.5, []
+    rl = report.lower()
+    if "bullish" in rl: s += 0.1
+    elif "bearish" in rl: s -= 0.1; flags.append("bearish_setup")
+    if "downtrend" in rl: s -= 0.1
+    elif "uptrend" in rl: s += 0.1
+    if "overbought" in rl: s -= 0.05
+    return SignalScore(score=max(0, min(1, s)), confidence=0.4, flags=flags, summary=_extract_first_sentence(report)[:200])
 
 
 def _parse_execution(trader_plan: str, chain: str) -> ExecutionParams:

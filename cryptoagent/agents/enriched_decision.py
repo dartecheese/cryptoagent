@@ -240,52 +240,77 @@ def enrich_decision(compact: CompactDecision, state: dict | None = None,
     # ── Narrative lifecycle ──
     narrative_raw = (state or {}).get("narrative_report", "")
     lifecycle = NarrativeLifecycle()
-    nl = narrative_raw.lower()
-    if "growing" in nl or "building" in nl or "accelerating" in nl:
-        lifecycle.phase = "accelerating"
-        lifecycle.strength = 0.7
-    elif "peak" in nl or "saturated" in nl:
-        lifecycle.phase = "peak"
-        lifecycle.strength = 0.9
-    elif "exhausted" in nl or "declining" in nl or "fading" in nl:
-        lifecycle.phase = "declining"
-        lifecycle.strength = 0.3
-    elif "emerging" in nl or "early" in nl:
-        lifecycle.phase = "emerging"
-        lifecycle.strength = 0.5
-    if "inflow" in nl:
-        lifecycle.rotation = "inflow"
-    elif "outflow" in nl:
-        lifecycle.rotation = "outflow"
+
+    # Try JSON first
+    import json, re
+    try:
+        m = re.search(r'\{[^}]+\}', narrative_raw)
+        if m:
+            data = json.loads(m.group(0))
+            lifecycle.phase = data.get("phase", "unknown")
+            lifecycle.strength = float(data.get("score", 0.5))
+            lifecycle.rotation = data.get("rotation", "neutral")
+            lifecycle.competitors = data.get("competitors", [])
+    except (json.JSONDecodeError, ValueError, KeyError):
+        # Fallback text parsing
+        nl = narrative_raw.lower()
+        if "growing" in nl or "building" in nl or "accelerating" in nl:
+            lifecycle.phase = "accelerating"
+            lifecycle.strength = 0.7
+        elif "peak" in nl or "saturated" in nl:
+            lifecycle.phase = "peak"
+            lifecycle.strength = 0.9
+        elif "exhausted" in nl or "declining" in nl or "fading" in nl:
+            lifecycle.phase = "declining"
+            lifecycle.strength = 0.3
+        elif "emerging" in nl or "early" in nl:
+            lifecycle.phase = "emerging"
+            lifecycle.strength = 0.5
+        if "inflow" in nl:
+            lifecycle.rotation = "inflow"
+        elif "outflow" in nl:
+            lifecycle.rotation = "outflow"
 
     # ── Momentum decomposition ──
     technical_raw = (state or {}).get("technical_report", "")
     momentum = MomentumDecomposition()
-    tl = technical_raw.lower()
-    import re
-    # Extract multi-timeframe changes
-    for tf, field in [("1h", "scalp_1h"), ("6h", "intraday_6h"), ("24h", "swing_24h"), ("7d", "trend_7d")]:
-        m = re.search(rf'{tf}.*?([+-]?[\d.]+)%', tl)
+
+    # Try JSON first
+    try:
+        m = re.search(r'\{[^}]+\}', technical_raw)
         if m:
-            pct = float(m.group(1)) / 100
-            setattr(momentum, field, max(-1, min(1, pct)))
-
-    # Determine convergence
-    signs = [1 if getattr(momentum, f) > 0.01 else -1 if getattr(momentum, f) < -0.01 else 0
-             for f in ["scalp_1h", "intraday_6h", "swing_24h", "trend_7d"]]
-    if all(s >= 0 for s in signs) and any(s > 0 for s in signs):
-        momentum.convergence = "aligning_up"
-    elif all(s <= 0 for s in signs) and any(s < 0 for s in signs):
-        momentum.convergence = "aligning_down"
-    elif signs[0] > 0 and any(s < 0 for s in signs[1:]):
-        momentum.convergence = "diverging"  # short-term up, longer-term down
-    elif signs[0] < 0 and any(s > 0 for s in signs[1:]):
-        momentum.convergence = "diverging"
-
-    if "rising" in tl or "accelerating" in tl:
-        momentum.volume_trend = "rising"
-    elif "falling" in tl or "declining" in tl:
-        momentum.volume_trend = "falling"
+            data = json.loads(m.group(0))
+            momentum.scalp_1h = float(data.get("change_1h_pct", 0)) / 100
+            momentum.intraday_6h = float(data.get("change_6h_pct", 0)) / 100
+            momentum.swing_24h = float(data.get("change_24h_pct", 0)) / 100
+            momentum.volume_trend = data.get("volume_trend", "steady")
+            trend = data.get("trend", "")
+            if trend == "up":
+                momentum.convergence = "aligning_up"
+            elif trend == "down":
+                momentum.convergence = "aligning_down"
+    except (json.JSONDecodeError, ValueError, KeyError):
+        # Fallback text parsing
+        tl = technical_raw.lower()
+        for tf, field in [("1h", "scalp_1h"), ("6h", "intraday_6h"), ("24h", "swing_24h"), ("7d", "trend_7d")]:
+            m2 = re.search(rf'{tf}.*?([+-]?[\d.]+)%', tl)
+            if m2:
+                pct = float(m2.group(1)) / 100
+                setattr(momentum, field, max(-1, min(1, pct)))
+        signs = [1 if getattr(momentum, f) > 0.01 else -1 if getattr(momentum, f) < -0.01 else 0
+                 for f in ["scalp_1h", "intraday_6h", "swing_24h", "trend_7d"]]
+        if all(s >= 0 for s in signs) and any(s > 0 for s in signs):
+            momentum.convergence = "aligning_up"
+        elif all(s <= 0 for s in signs) and any(s < 0 for s in signs):
+            momentum.convergence = "aligning_down"
+        elif signs[0] > 0 and any(s < 0 for s in signs[1:]):
+            momentum.convergence = "diverging"
+        elif signs[0] < 0 and any(s > 0 for s in signs[1:]):
+            momentum.convergence = "diverging"
+        if "rising" in tl or "accelerating" in tl:
+            momentum.volume_trend = "rising"
+        elif "falling" in tl or "declining" in tl:
+            momentum.volume_trend = "falling"
 
     # ── Position sizing (Kelly-inspired) ──
     sizing = PositionSizing()

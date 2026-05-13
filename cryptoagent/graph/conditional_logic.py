@@ -38,9 +38,32 @@ class ConditionalLogic:
         return self._should_continue_tools(state, "tools_technical")
 
     def should_continue_debate(self, state):
-        """Continue bull/bear debate until max rounds or Research Manager intervenes."""
+        """Continue bull/bear debate until max rounds or Research Manager intervenes.
+        Also: if all analysts strongly agree, skip the debate entirely."""
         debate_state = state.get("investment_debate_state", {})
         count = debate_state.get("count", 0)
+
+        # Consensus skip: if first round and all analysts agree, go straight to Research Manager
+        if count == 0:
+            scores = []
+            for key in ["onchain_report", "sentiment_report", "narrative_report", "technical_report"]:
+                report = state.get(key, "")
+                rl = report.lower()
+                if "bearish" in rl or "sell" in rl or "danger" in rl:
+                    scores.append(-1)
+                elif "bullish" in rl or "buy" in rl or "safe" in rl:
+                    scores.append(1)
+                else:
+                    scores.append(0)
+            if len(scores) >= 2 and all(s >= 0 for s in scores) and sum(scores) >= 2:
+                # All non-bearish, at least 2 bullish → unanimous bull
+                import logging
+                logging.getLogger(__name__).info("Consensus: unanimous bull — skipping debate")
+                return "Research Manager"
+            if len(scores) >= 2 and all(s <= 0 for s in scores) and sum(scores) <= -2:
+                import logging
+                logging.getLogger(__name__).info("Consensus: unanimous bear — skipping debate")
+                return "Research Manager"
 
         if count >= self.max_debate_rounds * 2:
             return "Research Manager"
@@ -52,7 +75,7 @@ class ConditionalLogic:
             if "FINAL TRANSACTION PROPOSAL" in content:
                 return "Research Manager"
 
-        # Alternate: bull → bear → bull → bear → ...
+        # Alternate
         last_speaker = None
         history = debate_state.get("history", "")
         if "[BULL]" in history and "[BEAR]" not in history.split("[BULL]")[-1]:
