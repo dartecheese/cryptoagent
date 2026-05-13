@@ -220,6 +220,88 @@ class CryptoAgentGraph:
         self._last_compact = build_compact_decision(self.curr_state)
         return self._last_compact
 
+    def get_enriched_decision(self) -> Optional["EnrichedDecision"]:
+        """Build an EnrichedDecision with comparative context, momentum,
+        position sizing, and execution quality. Bridge-ready.
+
+        Returns None if no analysis has been run.
+        """
+        if not self.curr_state:
+            return None
+
+        from cryptoagent.agents.compact_decision import build_compact_decision
+        from cryptoagent.agents.enriched_decision import enrich_decision, MemoryContext
+
+        compact = build_compact_decision(self.curr_state)
+
+        # Load memory context from trading log
+        mem = MemoryContext()
+        past = self.memory_log.get_recent_context(limit=20)
+        if past:
+            # Crude win rate from past outcomes
+            outcomes = past.lower().count("profit") - past.lower().count("loss")
+            total = max(1, past.count("OUTCOME"))
+            mem.similar_trades = total
+            mem.win_rate = max(0, min(1, 0.5 + outcomes * 0.05))
+            mem.key_lesson = past.split("Reflection")[-1].strip()[:200] if "Reflection" in past else ""
+
+        enriched = enrich_decision(compact, self.curr_state, mem)
+        return enriched
+
+    async def propagate_and_bridge(
+        self,
+        token: str,
+        chain: str = "ethereum",
+    ) -> tuple[dict, str, Optional["EnrichedDecision"], dict]:
+        """Run full analysis, build enriched decision, and submit to AST bridge.
+
+        Returns:
+            (state, decision_text, enriched_decision, bridge_result)
+        """
+        import httpx
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # Run analysis
+        state, decision = self.propagate(token, chain)
+
+        # Build enriched decision
+        enriched = self.get_enriched_decision()
+        if enriched is None:
+            return state, decision, None, {"status": "no_decision"}
+
+        # Check if bridge-ready
+        if not enriched.bridge_ready:
+            return state, decision, enriched, {
+                "status": "rejected",
+                "reason": enriched.bridge_rejection_reason,
+                "trading_card": enriched.trading_card,
+            }
+
+        # Submit to AST bridge
+        ast_url = self.config.get("ast_http_url", "http://localhost:8989")
+        bridge_payload = enriched.to_bridge_signal()
+
+        bridge_result = {"status": "error", "reason": "unknown"}
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.post(
+                    f"{ast_url}/bridge/signal",
+                    json=bridge_payload,
+                )
+                bridge_result = {
+                    "status": "submitted" if resp.status_code == 200 else "failed",
+                    "http_code": resp.status_code,
+                    "response": resp.json() if resp.status_code == 200 else resp.text[:500],
+                    "trading_card": enriched.trading_card,
+                }
+                logger.info(f"Bridge submission: {bridge_result['status']} (HTTP {resp.status_code})")
+        except Exception as e:
+            bridge_result = {"status": "connection_error", "reason": str(e)}
+            logger.warning(f"Bridge connection failed: {e}")
+
+        return state, decision, enriched, bridge_result
+
     def get_report(self) -> str:
         """Build a comprehensive markdown report from the current state."""
         if not self.curr_state:
